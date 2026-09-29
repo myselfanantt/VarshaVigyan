@@ -26,6 +26,8 @@ app.add_middleware(
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
+        "https://*.vercel.app",            # all Vercel preview deployments
+        "https://varshavigyan-frontend.vercel.app/", # production frontend (update if different)
     ],
     allow_credentials=True,
     allow_methods=["*"],
