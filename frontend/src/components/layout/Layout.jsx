@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar.jsx'
 import TopBar from './TopBar.jsx'
+import Toast from '../ui/Toast.jsx'
 import useAppStore from '../../store/useAppStore.js'
 
 export default function Layout() {
@@ -31,6 +32,9 @@ export default function Layout() {
           <Outlet />
         </main>
       </div>
+
+      {/* Global toast notifications */}
+      <Toast />
     </div>
   )
 }

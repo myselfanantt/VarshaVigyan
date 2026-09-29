@@ -134,9 +134,118 @@ export default function BiasCorrection() {
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url; a.download = `rainsense_bias_correction_${Date.now()}.csv`; a.click()
+    a.href = url; a.download = `varshavigyan_bias_correction_${Date.now()}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
     URL.revokeObjectURL(url)
     addToast('CSV exported successfully', 'success')
+  }
+
+  const exportPDF = () => {
+    const now = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
+    const alertColors = { very_heavy: '#dc2626', heavy: '#ea580c', moderate: '#d97706', normal: '#16a34a' }
+    const rows = filtered.map((d) => `
+      <tr>
+        <td>${d.name}</td>
+        <td>${d.state}</td>
+        <td>${d.raw_nwp_mm?.toFixed(1)} mm</td>
+        <td>×${d.bias_factor?.toFixed(2)}</td>
+        <td style="font-weight:600;background:${d.corrected_mm >= 115.5 ? '#fee2e2' : d.corrected_mm >= 64.5 ? '#fed7aa' : d.corrected_mm >= 15 ? '#fef9c3' : 'transparent'}">
+          ${d.corrected_mm?.toFixed(1)} mm
+        </td>
+        <td>${d.confidence_interval_upper > 0 ? '±' + (d.confidence_interval_upper - d.corrected_mm).toFixed(1) : '—'}</td>
+        <td>${d.regime_used || d.regime || '—'}</td>
+        <td style="color:${alertColors[d.alert_level] || '#374151'};font-weight:600;text-transform:capitalize">
+          ${(d.alert_level || 'normal').replace('_', ' ')}
+        </td>
+        <td>${d.method_used || '—'}</td>
+      </tr>`).join('')
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>VarshaVigyan — Bias Correction Report</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; color: #1e293b; padding: 32px; font-size: 12px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid #1A6FE8; }
+    .logo { font-size: 20px; font-weight: 700; color: #1A6FE8; }
+    .logo span { color: #18A86B; }
+    .meta { text-align: right; color: #64748b; font-size: 11px; line-height: 1.6; }
+    .section-title { font-size: 14px; font-weight: 600; color: #1e293b; margin-bottom: 10px; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 600; }
+    .params { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+    .param-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; }
+    .param-card .label { font-size: 10px; color: #64748b; margin-bottom: 2px; }
+    .param-card .value { font-size: 13px; font-weight: 600; color: #1e293b; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+    thead tr { background: #1A6FE8; color: white; }
+    thead th { padding: 8px 10px; text-align: left; font-size: 10px; font-weight: 600; letter-spacing: 0.5px; }
+    tbody tr:nth-child(even) { background: #f8fafc; }
+    tbody td { padding: 7px 10px; border-bottom: 1px solid #f1f5f9; }
+    .footer { margin-top: 24px; padding-top: 12px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; color: #94a3b8; font-size: 10px; }
+    .legend { display: flex; gap: 12px; margin-bottom: 16px; align-items: center; }
+    .legend-item { display: flex; align-items: center; gap: 4px; font-size: 10px; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+    @media print { body { padding: 16px; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="logo">Varsha<span>Vigyan</span></div>
+      <div style="color:#64748b;font-size:11px;margin-top:4px">NCMRWF | Ministry of Earth Sciences — SIH 2026</div>
+    </div>
+    <div class="meta">
+      <div><strong>Bias Correction Report</strong></div>
+      <div>Generated: ${now} IST</div>
+      <div>State: ${selectedState} &nbsp;|&nbsp; T+${leadTime}h &nbsp;|&nbsp; ${filtered.length} districts</div>
+    </div>
+  </div>
+
+  <div class="params">
+    <div class="param-card"><div class="label">Active Regime</div><div class="value">${selectedRegime}</div></div>
+    <div class="param-card"><div class="label">Lead Time</div><div class="value">T+${leadTime}h</div></div>
+    <div class="param-card"><div class="label">State</div><div class="value">${selectedState}</div></div>
+    <div class="param-card"><div class="label">Method</div><div class="value">${currentMethodInfo?.method || 'Quantile Mapping'}</div></div>
+    <div class="param-card"><div class="label">Typical Improvement</div><div class="value" style="color:#18A86B">${currentMethodInfo?.typical_improvement || '35–40%'}</div></div>
+    <div class="param-card"><div class="label">Districts</div><div class="value">${filtered.length}</div></div>
+  </div>
+
+  <div class="legend">
+    <strong style="font-size:10px">Alert Legend:</strong>
+    <div class="legend-item"><div class="legend-dot" style="background:#fee2e2"></div> Very Heavy (≥115.5 mm)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#fed7aa"></div> Heavy (64.5–115.5 mm)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#fef9c3"></div> Moderate (15–64.5 mm)</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f1f5f9"></div> Normal (&lt;15 mm)</div>
+  </div>
+
+  <div class="section-title">District-wise Bias Correction Results</div>
+  <table>
+    <thead>
+      <tr>
+        <th>District</th><th>State</th><th>Raw NWP</th><th>Bias Factor</th>
+        <th>Corrected</th><th>CI ±</th><th>Regime</th><th>Alert</th><th>Method</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>
+
+  <div class="footer">
+    <div>VarshaVigyan — Regime-Aware AI Post-Processing of Monsoon Rainfall Forecasts</div>
+    <div>Confidential — NCMRWF Internal Use Only</div>
+  </div>
+</body>
+</html>`
+
+    const win = window.open('', '_blank', 'width=900,height=700')
+    win.document.write(html)
+    win.document.close()
+    win.focus()
+    setTimeout(() => { win.print() }, 500)
+    addToast('PDF report opened — use your browser\'s Print → Save as PDF', 'success')
   }
 
   const chartData = pageData.map((d) => ({
@@ -389,7 +498,7 @@ export default function BiasCorrection() {
           Export CSV
         </button>
         <button
-          onClick={() => addToast('PDF report queued for generation. Download will begin shortly.', 'info')}
+          onClick={exportPDF}
           className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold border transition-colors hover:bg-gray-50"
           style={{ borderColor: '#e2e8f0', color: 'var(--color-text-secondary)' }}
         >

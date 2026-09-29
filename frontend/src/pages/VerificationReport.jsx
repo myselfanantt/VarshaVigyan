@@ -41,6 +41,7 @@ export default function VerificationReport() {
   const [selectedRegimes, setSelectedRegimes] = useState(['all'])
   const [customFrom, setCustomFrom] = useState('')
   const [customTo, setCustomTo] = useState('')
+  const [reportGenerated, setReportGenerated] = useState(false)
 
   const periodKey = PERIOD_KEYS[period] || 'month'
 
@@ -108,6 +109,155 @@ export default function VerificationReport() {
   const firstETS = etsRaw[0]?.ets_corrected || 0
   const lastETS = etsRaw[etsRaw.length - 1]?.ets_corrected || 0
   const trend = lastETS > firstETS ? '📈 Improving' : '📉 Degrading'
+
+  const generateReportCSV = () => {
+    const headers = ['Regime', 'Events', 'RMSE Raw', 'RMSE Corrected', 'ETS Raw', 'ETS Corrected',
+      'CSI Raw', 'CSI Corrected', 'POD Raw', 'POD Corrected', 'FAR Raw', 'FAR Corrected', 'FSS Raw', 'FSS Corrected']
+    const rows = filteredMetrics.map((m) => [
+      m.regime, m.event_count,
+      m.rmse_raw.toFixed(3), m.rmse_corrected.toFixed(3),
+      m.ets_raw.toFixed(3), m.ets_corrected.toFixed(3),
+      m.csi_raw.toFixed(3), m.csi_corrected.toFixed(3),
+      m.pod_raw.toFixed(3), m.pod_corrected.toFixed(3),
+      m.far_raw.toFixed(3), m.far_corrected.toFixed(3),
+      m.fss_raw.toFixed(3), m.fss_corrected.toFixed(3),
+    ])
+    const csv = [headers, ...rows].map((r) => r.join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `varshavigyan_verification_${periodKey}_${Date.now()}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    setReportGenerated(true)
+    addToast(`Verification report CSV downloaded for ${period}`, 'success')
+  }
+
+  const exportReportPDF = () => {
+    const now = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
+    const metricRows = filteredMetrics.map((m, i) => {
+      const isBest = i === bestIdx
+      const isWorst = i === worstIdx
+      const rowBg = isBest ? '#f0fdf4' : isWorst ? '#fff1f2' : i % 2 === 0 ? 'white' : '#f8fafc'
+      const cell = (raw, corr, higher) => {
+        const good = higher ? corr > raw : corr < raw
+        return `<span style="color:#94a3b8">${raw.toFixed(2)}</span> → <span style="font-weight:600;color:${good ? '#166534' : '#991b1b'};background:${good ? '#dcfce7' : '#fee2e2'};padding:1px 4px;border-radius:3px">${corr.toFixed(2)}</span>`
+      }
+      return `<tr style="background:${rowBg}">
+        <td>${m.regime}${isBest ? ' 🏆' : isWorst ? ' ⚠️' : ''}</td>
+        <td style="text-align:right">${m.event_count}</td>
+        <td>${cell(m.rmse_raw, m.rmse_corrected, false)}</td>
+        <td>${cell(m.ets_raw, m.ets_corrected, true)}</td>
+        <td>${cell(m.csi_raw, m.csi_corrected, true)}</td>
+        <td>${cell(m.pod_raw, m.pod_corrected, true)}</td>
+        <td>${cell(m.far_raw, m.far_corrected, false)}</td>
+        <td>${cell(m.fss_raw, m.fss_corrected, true)}</td>
+      </tr>`
+    }).join('')
+
+    const kpiCards = summary ? [
+      { label: 'Avg RMSE', raw: summary.avg_rmse_raw?.toFixed(2), corr: summary.avg_rmse_corrected?.toFixed(2), unit: 'mm', delta: `-${summary.rmse_improvement_pct}%`, good: true },
+      { label: 'Avg ETS',  raw: summary.avg_ets_raw?.toFixed(3),  corr: summary.avg_ets_corrected?.toFixed(3),  unit: '',   delta: `+${summary.ets_improvement_pct}%`, good: true },
+      { label: 'Avg POD',  raw: summary.avg_pod_raw?.toFixed(2),  corr: summary.avg_pod_corrected?.toFixed(2),  unit: '',   delta: '', good: true },
+      { label: 'Avg FAR',  raw: summary.avg_far_raw?.toFixed(2),  corr: summary.avg_far_corrected?.toFixed(2),  unit: '',   delta: '', good: true },
+      { label: 'Events',   raw: '',                                corr: String(summary.total_events || filteredMetrics.reduce((s,m)=>s+m.event_count,0)), unit: '', delta: '', good: true },
+    ].map(k => `
+      <div class="kpi-card">
+        <div class="kpi-label">${k.label}</div>
+        <div class="kpi-value">${k.corr}${k.unit ? ' ' + k.unit : ''}</div>
+        ${k.raw ? `<div class="kpi-raw">Raw: ${k.raw}${k.unit ? ' ' + k.unit : ''}</div>` : ''}
+        ${k.delta ? `<div class="kpi-delta">${k.delta}</div>` : ''}
+      </div>`).join('') : ''
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>VarshaVigyan — Verification Report</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; color: #1e293b; padding: 32px; font-size: 12px; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid #1A6FE8; }
+    .logo { font-size: 20px; font-weight: 700; color: #1A6FE8; }
+    .logo span { color: #18A86B; }
+    .meta { text-align: right; color: #64748b; font-size: 11px; line-height: 1.8; }
+    h2 { font-size: 13px; font-weight: 600; margin: 20px 0 10px; color: #1e293b; border-left: 3px solid #1A6FE8; padding-left: 8px; }
+    .kpi-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+    .kpi-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 14px; min-width: 110px; }
+    .kpi-label { font-size: 10px; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+    .kpi-value { font-size: 16px; font-weight: 700; color: #1e293b; }
+    .kpi-raw { font-size: 10px; color: #94a3b8; margin-top: 2px; }
+    .kpi-delta { display: inline-block; background: #dcfce7; color: #166534; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 10px; margin-top: 4px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 11px; }
+    thead tr { background: #1A6FE8; color: white; }
+    thead th { padding: 7px 9px; text-align: left; font-size: 10px; font-weight: 600; letter-spacing: 0.4px; }
+    tbody td { padding: 6px 9px; border-bottom: 1px solid #f1f5f9; }
+    .insight { background: #eff6ff; border-left: 4px solid #1A6FE8; border-radius: 0 8px 8px 0; padding: 14px 16px; margin-bottom: 24px; }
+    .insight p { font-size: 12px; line-height: 1.7; color: #334155; }
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
+    .stat-card { background: #f8fafc; border: 1px solid #f1f5f9; border-radius: 6px; padding: 10px; }
+    .stat-label { font-size: 9px; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-value { font-size: 14px; font-weight: 700; margin-top: 4px; }
+    .footer { margin-top: 24px; padding-top: 12px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; color: #94a3b8; font-size: 10px; }
+    @media print { body { padding: 16px; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="logo">Varsha<span>Vigyan</span></div>
+      <div style="color:#64748b;font-size:11px;margin-top:4px">NCMRWF | Ministry of Earth Sciences — SIH 2026</div>
+    </div>
+    <div class="meta">
+      <div><strong>Forecast Verification Report</strong></div>
+      <div>Period: ${period}</div>
+      <div>Generated: ${now} IST</div>
+      <div>Regimes: ${selectedRegimes.includes('all') ? 'All' : selectedRegimes.join(', ')}</div>
+    </div>
+  </div>
+
+  <h2>Key Performance Indicators</h2>
+  <div class="kpi-row">${kpiCards}</div>
+
+  <h2>AI Insight</h2>
+  <div class="insight"><p>${insightText}</p></div>
+
+  <h2>Summary Statistics</h2>
+  <div class="stats-grid">
+    <div class="stat-card"><div class="stat-label">Best Day ETS</div><div class="stat-value" style="color:#18A86B">${bestDayETS}</div></div>
+    <div class="stat-card"><div class="stat-label">Worst Day ETS</div><div class="stat-value" style="color:#E84E1A">${worstDayETS}</div></div>
+    <div class="stat-card"><div class="stat-label">Trend</div><div class="stat-value" style="color:#1A6FE8;font-size:12px">${trend}</div></div>
+    <div class="stat-card"><div class="stat-label">Events Detected</div><div class="stat-value" style="color:#7C3AED">${summary?.total_events || 375}</div></div>
+  </div>
+
+  <h2>Regime Performance Table</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Regime</th><th>Events</th><th>RMSE ↓</th><th>ETS ↑</th>
+        <th>CSI ↑</th><th>POD ↑</th><th>FAR ↓</th><th>FSS ↑</th>
+      </tr>
+    </thead>
+    <tbody>${metricRows}</tbody>
+  </table>
+
+  <div class="footer">
+    <div>VarshaVigyan — Regime-Aware AI Post-Processing of Monsoon Rainfall Forecasts</div>
+    <div>Confidential — NCMRWF Internal Use Only</div>
+  </div>
+</body>
+</html>`
+
+    const win = window.open('', '_blank', 'width=950,height=750')
+    win.document.write(html)
+    win.document.close()
+    win.focus()
+    setTimeout(() => { win.print() }, 500)
+    addToast("PDF report opened — use browser's Print → Save as PDF", 'success')
+  }
 
   return (
     <div className="space-y-5">
@@ -193,12 +343,12 @@ export default function VerificationReport() {
           </div>
 
           <button
-            onClick={() => addToast('Report generated for selected period', 'success')}
-            className="ml-auto flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white"
+            onClick={generateReportCSV}
+            className="ml-auto flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors"
             style={{ backgroundColor: '#1A6FE8' }}
           >
             <Calendar size={14} />
-            Generate Report
+            {reportGenerated ? 'Download Again' : 'Generate Report'}
           </button>
         </div>
       </div>
@@ -385,8 +535,8 @@ export default function VerificationReport() {
             </h3>
           </div>
           <button
-            onClick={() => addToast('PDF report queued for generation. Download will begin shortly.', 'info')}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border font-medium"
+            onClick={exportReportPDF}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border font-medium transition-colors hover:bg-blue-50"
             style={{ borderColor: '#1A6FE8', color: '#1A6FE8' }}
           >
             <Download size={12} />

@@ -172,6 +172,7 @@ export default function ForecastMap() {
             onStateClick={handleDistrictClick}
             selectedLayer={layer}
             layerData={districtWithLeadTime}
+            selectedDate={selectedDate}
           />
         </div>
       </div>
